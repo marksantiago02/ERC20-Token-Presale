@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap');
+
+/* Reset and base styles */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  padding: 0;
+  margin: 0;
+  font-family: 'Fredoka', Arial, sans-serif;
+  min-height: 100vh;
+  background: transparent;
+  color: #222;
+}
+
+#__next {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Fredoka', Arial, sans-serif;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* Font rendering optimization */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* RainbowKit CSS removed - using default styling */
+
+/* OLD COMPLEX CSS REMOVED - REPLACED WITH SIMPLIFIED VERSION BELOW */
+
+/* RainbowKit dropdown/menu CSS removed - using default styling */
+
+/* Styled-components protection */
+[class*="styled"] {
+  font-family: inherit !important;
+  box-sizing: border-box !important;
+}
+
+[class*="styled"] * {
+  box-sizing: border-box !important;
+}
+
+/* Header specific fixes */
+.header-container {
+  position: relative;
+  z-index: 1000;
+}
+
+.header-container * {
+  font-family: 'Fredoka', Arial, sans-serif !important;
+}
+
+/* Footer positioning fixes */
+footer {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* Ensure main content doesn't interfere with modals */
+main {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* Connect button wrapper - minimal styling */
+.connect-button-wrapper {
+  position: relative;
+}
+
+/* Social button fixes */
+.social-button {
+  text-decoration: none !important;
+  color: inherit !important;
+  font-family: inherit !important;
+}
+
+/* PresaleWidget specific fixes */
+.presale-widget {
+  position: relative;
+  z-index: 1;
+}
+
+.presale-widget * {
+  font-family: inherit !important;
+  box-sizing: border-box !important;
+}
+
+/* Form elements in PresaleWidget */
+.presale-widget input,
+.presale-widget select,
+.presale-widget button {
+  font-family: inherit !important;
+  box-sizing: border-box !important;
+}
+
+/* Global button styles - ONLY for non-styled components */
+button:not([class*="styled"]):not([data-rk] *) {
+  font-family: 'Fredoka', Arial, sans-serif;
+  font-weight: 700;
+  border-radius: 12px;
+  background: #ff69b4;
+  color: white;
+  border: none;
+  padding: 0.75em 1.5em;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+button:not([class*="styled"]):not([data-rk] *):hover {
+  background: #ff1493;
+}
+
+/* Global input/select styles - ONLY for non-styled components */
+input:not([class*="styled"]), 
+select:not([class*="styled"]) {
+  border-radius: 8px;
+  border: 1px solid #ffb6b9;
+  padding: 0.5em 1em;
+  font-size: 1em;
+  font-family: 'Fredoka', Arial, sans-serif;
+}
