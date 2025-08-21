@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { useAccount, useReadContract, useWriteContract, useChainId } from 'wagmi';
 import HMESHPresaleABI from '../abi/HMESHPresale.json';
 import { getContractAddress, NETWORK_CONFIG } from '../utils/constants';
-import { ShoppingCart, Gift, BarChart3, Coins, DollarSign, CreditCard, Zap, Lightbulb, CheckCircle, Rocket, Lock, Loader2, XCircle, Circle, Clock, AlertTriangle, Globe, Gem} from 'lucide-react';
+import { ShoppingCart, Gift, BarChart3, Coins, DollarSign, CreditCard, Zap, Lightbulb, CheckCircle, Rocket, Lock, Loader2, XCircle, Circle, Clock, AlertTriangle, Globe, Gem, Timer, TrendingUp, Users, Star} from 'lucide-react';
 
 // Define the Round struct type based on the ABI
 interface RoundInfo {
@@ -30,6 +30,9 @@ interface PresaleRound {
   price: string;
   progress: number;
   roundInfo: RoundInfo;
+  remainingStartTime: number;
+  remainingEndTime: number;
+  totalFundsRaised: bigint;
 }
 
 // Define claimable token type
@@ -38,7 +41,81 @@ interface ClaimableToken {
   date: string;
   amount: string;
   status: 'claimed' | 'available' | 'locked';
+  remainingCliffTime?: number;
+  remainingVestingTime?: number;
 }
+
+// Define user purchase info
+interface UserPurchase {
+  amount: bigint;
+  roundId: number;
+}
+
+// Define promoter info
+interface PromoterInfo {
+  followers: bigint;
+  totalReferrals: bigint;
+  potentialRewards: bigint;
+}
+
+// Countdown Timer Component
+const CountdownTimer: React.FC<{ 
+  timeLeft: number; 
+  label: string; 
+  variant?: 'primary' | 'secondary' | 'warning';
+  showIcon?: boolean;
+}> = ({ timeLeft, label, variant = 'primary', showIcon = true }) => {
+  const formatTime = (seconds: number) => {
+    if (seconds <= 0) return '00:00:00';
+    
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (days > 0) {
+      return `${days}d ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getVariantStyles = () => {
+    switch (variant) {
+      case 'warning':
+        return { background: 'rgba(255, 193, 7, 0.2)', border: '1px solid rgba(255, 193, 7, 0.4)' };
+      case 'secondary':
+        return { background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.2)' };
+      default:
+        return { background: 'rgba(76, 175, 80, 0.2)', border: '1px solid rgba(76, 175, 80, 0.4)' };
+    }
+  };
+
+  return (
+    <div style={{
+      padding: '0.75rem',
+      borderRadius: '12px',
+      textAlign: 'center',
+      ...getVariantStyles()
+    }}>
+      <div style={{ 
+        fontSize: '1.2rem', 
+        fontWeight: 'bold', 
+        color: '#fff',
+        marginBottom: '0.25rem',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.5rem'
+      }}>
+        {showIcon && <Timer size={18} />}
+        {formatTime(timeLeft)}
+      </div>
+      <div style={{ fontSize: '0.8rem', opacity: 0.8, color: '#fff' }}>
+        {label}
+      </div>
+    </div>
+  );
+};
 
 const WidgetContainer = styled.div`
   background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
@@ -332,6 +409,90 @@ const ClaimableItem = styled.div`
   }
 `;
 
+const RoundDetailsCard = styled.div`
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  
+  .round-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    
+    .round-title {
+      font-size: 1.3rem;
+      font-weight: bold;
+      color: #fff;
+    }
+    
+    .round-status {
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      
+      &.upcoming {
+        background: rgba(255, 193, 7, 0.2);
+        color: #ffc107;
+        border: 1px solid rgba(255, 193, 7, 0.4);
+      }
+      
+      &.active {
+        background: rgba(76, 175, 80, 0.2);
+        color: #4caf50;
+        border: 1px solid rgba(76, 175, 80, 0.4);
+      }
+      
+      &.completed {
+        background: rgba(158, 158, 158, 0.2);
+        color: #9e9e9e;
+        border: 1px solid rgba(158, 158, 158, 0.4);
+      }
+    }
+  }
+  
+  .round-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+    
+    .stat-item {
+      text-align: center;
+      padding: 0.75rem;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      
+      .stat-value {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #fff;
+        margin-bottom: 0.25rem;
+      }
+      
+      .stat-label {
+        font-size: 0.75rem;
+        opacity: 0.8;
+        color: #fff;
+      }
+    }
+  }
+  
+  .countdown-section {
+    margin-top: 1rem;
+    
+    .countdown-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+  }
+`;
+
 const PresaleWidget: React.FC = () => {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -341,16 +502,25 @@ const PresaleWidget: React.FC = () => {
   const [roundId, setRoundId] = useState(1);
   const [promoCode, setPromoCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
 
   // Get contract address for current chain
   const presaleAddress = getContractAddress(chainId, 'HMESH_PRESALE');
   const currentNetwork = NETWORK_CONFIG[chainId as keyof typeof NETWORK_CONFIG];
 
+  // Update current time every second for countdowns
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Math.floor(Date.now() / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Contract reads - using correct ABI function names
   const { data: totalRounds, isLoading: isLoadingRounds, error: roundsError } = useReadContract({
     address: presaleAddress as `0x${string}`,
     abi: HMESHPresaleABI,
-    functionName: 'totalRounds', // Correct function name from ABI
+    functionName: 'totalRounds',
     query: {
       enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000',
     },
@@ -361,13 +531,49 @@ const PresaleWidget: React.FC = () => {
     const { data: roundInfo } = useReadContract({
       address: presaleAddress as `0x${string}`,
       abi: HMESHPresaleABI,
-      functionName: 'getRound', // Correct function name from ABI
+      functionName: 'getRound',
       args: [roundId],
       query: {
         enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000',
       },
     });
-    return { roundId, roundInfo };
+
+    const { data: totalFundsRaised } = useReadContract({
+      address: presaleAddress as `0x${string}`,
+      abi: HMESHPresaleABI,
+      functionName: 'getTotalFundsRaised',
+      args: [roundId],
+      query: {
+        enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000',
+      },
+    });
+
+    return { roundId, roundInfo, totalFundsRaised };
+  });
+
+  // Get user purchase info for current round
+  const { data: userPurchase } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getUserRoundPurchase',
+    args: [address, roundId],
+    query: {
+      enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000' && !!address,
+    },
+  });
+
+  // Type assertion for userPurchase
+  const typedUserPurchase = userPurchase as UserPurchase | undefined;
+
+  // Get promoter info if user is a promoter
+  const { data: userPromoter } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getUserPromoter',
+    args: [address],
+    query: {
+      enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000' && !!address,
+    },
   });
 
   // Contract writes
@@ -381,12 +587,16 @@ const PresaleWidget: React.FC = () => {
     { symbol: 'DAI', name: 'Dai', icon: <Coins size={20} />, address: getContractAddress(chainId, 'DAI'), isNative: false }
   ].filter(token => token.isNative || (token.address && token.address !== '0x0000000000000000000000000000000000000000')) : [];
 
-  // Transform contract data to UI format with proper type checking
+  // Transform contract data to UI format with proper type checking and countdowns
   const presaleRounds: PresaleRound[] = roundsData
     .filter(item => item.roundInfo)
     .map(item => {
       const round = item.roundInfo as RoundInfo;
       if (!round) return null;
+      
+      // Calculate countdowns
+      const remainingStartTime = Math.max(0, Number(round.startTime) - currentTime);
+      const remainingEndTime = Math.max(0, Number(round.endTime) - currentTime);
       
       // Calculate progress percentage
       const progress = round.tokenAmount > 0 
@@ -394,12 +604,11 @@ const PresaleWidget: React.FC = () => {
         : 0;
       
       // Determine status based on time
-      const now = Math.floor(Date.now() / 1000);
       let status: 'upcoming' | 'active' | 'completed' = 'upcoming';
       
-      if (now >= Number(round.startTime) && now <= Number(round.endTime)) {
+      if (currentTime >= Number(round.startTime) && currentTime <= Number(round.endTime)) {
         status = 'active';
-      } else if (now > Number(round.endTime)) {
+      } else if (currentTime > Number(round.endTime)) {
         status = 'completed';
       }
       
@@ -410,12 +619,88 @@ const PresaleWidget: React.FC = () => {
         price: `$${(Number(round.tokenPrice) / 1e18).toFixed(2)}`,
         progress,
         roundInfo: round,
+        remainingStartTime,
+        remainingEndTime,
+        totalFundsRaised: item.totalFundsRaised || BigInt(0),
       };
     })
-    .filter((round): round is PresaleRound => round !== null);
+    .filter((round): round is NonNullable<typeof round> => round !== null) as PresaleRound[];
 
-  // Mock claimable tokens for now - will be replaced with real contract calls
-  const claimableTokens: ClaimableToken[] = [];
+  // Calculate claimable tokens with countdowns
+  const getClaimableTokens = (): ClaimableToken[] => {
+    if (!presaleRounds.length || !typedUserPurchase || !typedUserPurchase.amount) return [];
+    
+    const round = presaleRounds.find(r => r.id === roundId);
+    if (!round) return [];
+    
+    const roundInfo = round.roundInfo;
+    const purchaseAmount = Number(typedUserPurchase.amount);
+    if (purchaseAmount <= 0) return [];
+    
+    const tokens: ClaimableToken[] = [];
+    const now = currentTime;
+    const roundEndTime = Number(roundInfo.endTime);
+    const cliffEndTime = roundEndTime + Number(roundInfo.cliffDuration);
+    const vestingEndTime = cliffEndTime + Number(roundInfo.vestingDuration);
+    
+    // Cliff period
+    if (now < cliffEndTime) {
+      const remainingCliffTime = cliffEndTime - now;
+      tokens.push({
+        period: 'Cliff Period',
+        date: new Date(cliffEndTime * 1000).toLocaleDateString(),
+        amount: '0',
+        status: 'locked',
+        remainingCliffTime,
+      });
+    } else {
+      // After cliff, show vesting periods
+      const releasePercentage = roundInfo.releasePercentageAfterCliff;
+      const immediateRelease = (purchaseAmount * releasePercentage) / 100;
+      
+      if (immediateRelease > 0) {
+        tokens.push({
+          period: 'Immediate Release',
+          date: new Date(cliffEndTime * 1000).toLocaleDateString(),
+          amount: immediateRelease.toFixed(2),
+          status: 'available',
+        });
+      }
+      
+      // Calculate monthly vesting periods
+      const monthlyVestingAmount = purchaseAmount - immediateRelease;
+      const monthlyPercentage = roundInfo.releasePercentageInVestingPerMonth;
+      const timeUnit = Number(roundInfo.vestingTimeUnit);
+      
+      monthlyPercentage.forEach((percentage, index) => {
+        const periodStart = cliffEndTime + (index * timeUnit);
+        const periodEnd = periodStart + timeUnit;
+        const periodAmount = (monthlyVestingAmount * percentage) / 100;
+        
+        if (now < periodStart) {
+          const remainingTime = periodStart - now;
+          tokens.push({
+            period: `Month ${index + 1}`,
+            date: new Date(periodStart * 1000).toLocaleDateString(),
+            amount: periodAmount.toFixed(2),
+            status: 'locked',
+            remainingVestingTime: remainingTime,
+          });
+        } else if (now >= periodStart && now < periodEnd) {
+          tokens.push({
+            period: `Month ${index + 1}`,
+            date: new Date(periodStart * 1000).toLocaleDateString(),
+            amount: periodAmount.toFixed(2),
+            status: 'available',
+          });
+        }
+      });
+    }
+    
+    return tokens;
+  };
+
+  const claimableTokens = getClaimableTokens();
 
   const calculateTokens = (amount: string) => {
     if (!amount || parseFloat(amount) <= 0) return '0';
@@ -639,48 +924,94 @@ const PresaleWidget: React.FC = () => {
         </select>
       </FormGroup>
 
-      <div>
-        <label>Claimable Tokens</label>
-        {claimableTokens.length > 0 ? (
-          claimableTokens.map((item, index) => (
-            <ClaimableItem key={index}>
-              <div className="claim-info">
-                <div className="claim-period">{item.period}</div>
-                <div className="claim-date">{item.date}</div>
-              </div>
-              <div className="claim-amount">
-                {item.amount} HMESH
-                {item.status === 'claimed' && <CheckCircle size={16} style={{ marginLeft: '0.5rem' }} />}
-                {item.status === 'available' && <Rocket size={16} style={{ marginLeft: '0.5rem' }} />}
-                {item.status === 'locked' && <Lock size={16} style={{ marginLeft: '0.5rem' }} />}
-              </div>
-            </ClaimableItem>
-          ))
-        ) : (
-          <div style={{ 
-            textAlign: 'center', 
-            padding: '1rem', 
-            color: 'rgba(255, 255, 255, 0.7)',
-            fontSize: '0.9rem'
-          }}>
-            No claimable tokens available yet.
-          </div>
-        )}
-      </div>
+      {typedUserPurchase && typedUserPurchase.amount && Number(typedUserPurchase.amount) > 0 ? (
+        <>
+          <InfoCard>
+            <div className="info-value">{(Number(typedUserPurchase.amount) / 1e18).toFixed(2)} HMESH</div>
+            <div className="info-label">Total Purchased in Round {roundId}</div>
+          </InfoCard>
 
-      {claimableTokens.length > 0 ? (
-        <InfoCard>
-          <div className="info-value">2,500 HMESH</div>
-          <div className="info-label">Available to claim</div>
-        </InfoCard>
+          <div>
+            <label>Vesting Schedule & Claimable Tokens</label>
+            {claimableTokens.length > 0 ? (
+              claimableTokens.map((item, index) => (
+                <ClaimableItem key={index}>
+                  <div className="claim-info">
+                    <div className="claim-period">{item.period}</div>
+                    <div className="claim-date">{item.date}</div>
+                  </div>
+                  <div className="claim-amount">
+                    {item.amount} HMESH
+                    {item.status === 'claimed' && <CheckCircle size={16} style={{ marginLeft: '0.5rem' }} />}
+                    {item.status === 'available' && <Rocket size={16} style={{ marginLeft: '0.5rem' }} />}
+                    {item.status === 'locked' && <Lock size={16} style={{ marginLeft: '0.5rem' }} />}
+                  </div>
+                </ClaimableItem>
+              ))
+            ) : (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '1rem', 
+                color: 'rgba(255, 255, 255, 0.7)',
+                fontSize: '0.9rem'
+              }}>
+                No claimable tokens available yet.
+              </div>
+            )}
+          </div>
+
+          {/* Countdown timers for cliff and vesting */}
+          {claimableTokens.some(token => token.remainingCliffTime || token.remainingVestingTime) && (
+            <div style={{ marginTop: '1rem' }}>
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                marginBottom: '1rem',
+                fontSize: '1rem',
+                fontWeight: '600',
+                color: '#fff'
+              }}>
+                <Timer size={18} />
+                Time Remaining
+              </label>
+              <div style={{ display: 'grid', gap: '1rem' }}>
+                {claimableTokens
+                  .filter(token => token.remainingCliffTime || token.remainingVestingTime)
+                  .map((token, index) => (
+                    <div key={index}>
+                      {token.remainingCliffTime && (
+                        <CountdownTimer
+                          timeLeft={token.remainingCliffTime}
+                          label={`Cliff ends: ${token.date}`}
+                          variant="warning"
+                        />
+                      )}
+                      {token.remainingVestingTime && (
+                        <CountdownTimer
+                          timeLeft={token.remainingVestingTime}
+                          label={`Vesting period ${token.period} starts: ${token.date}`}
+                          variant="secondary"
+                        />
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </>
       ) : (
-        <InfoCard style={{ opacity: 0.7 }}>
-          <div className="info-value">0 HMESH</div>
-          <div className="info-label">No tokens to claim</div>
-        </InfoCard>
+        <div style={{ 
+          textAlign: 'center', 
+          padding: '2rem', 
+          color: 'rgba(255, 255, 255, 0.7)',
+          fontSize: '1.1rem'
+        }}>
+          No tokens purchased in this round.
+        </div>
       )}
 
-      <Button onClick={handleClaim} disabled={loading}>
+      <Button onClick={handleClaim} disabled={loading || !claimableTokens.some(t => t.status === 'available')}>
         {loading ? 'Processing...' : (
           <>
             <Gift size={18} style={{ marginRight: '8px' }} />
@@ -723,21 +1054,97 @@ const PresaleWidget: React.FC = () => {
         </div>
       ) : presaleRounds.length > 0 ? (
         presaleRounds.map((round) => (
-          <InfoCard key={round.id}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div className="info-value">{round.name}</div>
-                <div className="info-label">
-                  {round.price} • {round.status} • {round.progress}% sold
-                </div>
-              </div>
-              <div style={{ fontSize: '1.5rem' }}>
-                {round.status === 'active' && <Circle size={20} style={{ color: '#4CAF50' }} />}
-                {round.status === 'completed' && <CheckCircle size={20} style={{ color: '#4CAF50' }} />}
-                {round.status === 'upcoming' && <Clock size={20} style={{ color: '#FFA726' }} />}
+          <RoundDetailsCard key={round.id}>
+            <div className="round-header">
+              <div className="round-title">{round.name}</div>
+              <div className={`round-status ${round.status}`}>
+                {round.status}
               </div>
             </div>
-          </InfoCard>
+            
+            <div className="round-stats">
+              <div className="stat-item">
+                <div className="stat-value">{round.price}</div>
+                <div className="stat-label">Token Price</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-value">{round.progress}%</div>
+                <div className="stat-label">Progress</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-value">
+                  ${(Number(round.totalFundsRaised) / 1e18).toFixed(2)}
+                </div>
+                <div className="stat-label">Funds Raised</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-value">
+                  {(Number(round.roundInfo.tokenAmount) / 1e18).toLocaleString()}
+                </div>
+                <div className="stat-label">Total Supply</div>
+              </div>
+            </div>
+            
+            <div className="countdown-section">
+              <div className="countdown-grid">
+                {round.status === 'upcoming' && round.remainingStartTime && (
+                  <CountdownTimer
+                    timeLeft={round.remainingStartTime}
+                    label="Until Round Starts"
+                    variant="warning"
+                  />
+                )}
+                {round.status === 'active' && round.remainingEndTime && (
+                  <CountdownTimer
+                    timeLeft={round.remainingEndTime}
+                    label="Until Round Ends"
+                    variant="primary"
+                  />
+                )}
+                {round.status === 'completed' && (
+                  <div style={{
+                    padding: '0.75rem',
+                    borderRadius: '12px',
+                    textAlign: 'center',
+                    background: 'rgba(158, 158, 158, 0.2)',
+                    border: '1px solid rgba(158, 158, 158, 0.4)'
+                  }}>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>
+                      <CheckCircle size={18} style={{ marginRight: '8px' }} />
+                      Round Completed
+                    </div>
+                    <div style={{ fontSize: '0.8rem', opacity: 0.8, color: '#fff' }}>
+                      Ended on {new Date(Number(round.roundInfo.endTime) * 1000).toLocaleDateString()}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Additional round details */}
+            <div style={{ 
+              marginTop: '1rem', 
+              padding: '1rem', 
+              background: 'rgba(255, 255, 255, 0.05)', 
+              borderRadius: '8px',
+              fontSize: '0.85rem'
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <div>
+                  <strong style={{ color: '#fff' }}>Cliff Duration:</strong> {Number(round.roundInfo.cliffDuration) / 86400} days
+                </div>
+                <div>
+                  <strong style={{ color: '#fff' }}>Vesting Duration:</strong> {Number(round.roundInfo.vestingDuration) / 86400} days
+                </div>
+                <div>
+                  <strong style={{ color: '#fff' }}>Bonus:</strong> {round.roundInfo.userBonusPercentage}%
+                </div>
+                <div>
+                  <strong style={{ color: '#fff' }}>Promoter Reward:</strong> {round.roundInfo.promoterRewardPercentage}%
+                </div>
+              </div>
+            </div>
+          </RoundDetailsCard>
         ))
       ) : (
         <div style={{ 
