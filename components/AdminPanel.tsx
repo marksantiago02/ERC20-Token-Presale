@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { useAccount, useReadContract, useWriteContract, useChainId } from 'wagmi';
 import HMESHPresaleABI from '../abi/HMESHPresale.json';
@@ -15,7 +15,12 @@ import {
   BarChart3,
   Users,
   Settings,
-  Clock
+  Clock,
+  Star,
+  TrendingUp,
+  UserPlus,
+  Eye,
+  Loader2
 } from 'lucide-react';
 
 const AdminContainer = styled.div`
@@ -185,11 +190,153 @@ const TabContent = styled.div<{ hidden: boolean }>`
   display: ${props => props.hidden ? 'none' : 'block'};
 `;
 
+const PromoterCard = styled.div`
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-radius: 15px;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+  
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  }
+  
+  .promoter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    
+    .promoter-address {
+      font-family: 'monospace';
+      font-size: 0.9rem;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 0.5rem;
+      border-radius: 8px;
+    }
+    
+    .promoter-status {
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      
+      &.active {
+        background: rgba(81, 207, 102, 0.2);
+        color: #51cf66;
+        border: 1px solid rgba(81, 207, 102, 0.4);
+      }
+      
+      &.inactive {
+        background: rgba(255, 107, 107, 0.2);
+        color: #ff6b6b;
+        border: 1px solid rgba(255, 107, 107, 0.4);
+      }
+    }
+  }
+  
+  .promoter-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+    
+    .stat-item {
+      text-align: center;
+      padding: 0.75rem;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      
+      .stat-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #fff;
+        margin-bottom: 0.25rem;
+      }
+      
+      .stat-label {
+        font-size: 0.75rem;
+        opacity: 0.8;
+        color: #fff;
+      }
+    }
+  }
+  
+  .promoter-followers {
+    margin-top: 1rem;
+    
+    .followers-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      
+      h4 {
+        margin: 0;
+        color: #fff;
+        font-size: 1rem;
+      }
+    }
+    
+    .followers-list {
+      max-height: 200px;
+      overflow-y: auto;
+      
+      .follower-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem;
+        margin: 0.25rem 0;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 6px;
+        font-size: 0.85rem;
+        
+        .follower-address {
+          font-family: 'monospace';
+          color: #fff;
+        }
+        
+        .follower-amount {
+          color: #51cf66;
+          font-weight: 600;
+        }
+      }
+    }
+  }
+`;
+
+const SearchInput = styled.input`
+  width: 100%;
+  padding: 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+  }
+`;
+
 const AdminPanel: React.FC = () => {
   const { address } = useAccount();
   const chainId = useChainId();
-  const [activeTab, setActiveTab] = useState<'overview' | 'rounds' | 'users' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'rounds' | 'users' | 'promoters' | 'settings'>('overview');
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  
+  // Promoter-related states
+  const [promoterSearch, setPromoterSearch] = useState('');
+  const [selectedPromoter, setSelectedPromoter] = useState<string | null>(null);
+  const [promoterFollowers, setPromoterFollowers] = useState<any[]>([]);
+  const [promoterStats, setPromoterStats] = useState<any>(null);
   
   // Form states for create round
   const [roundForm, setRoundForm] = useState({
@@ -218,6 +365,8 @@ const AdminPanel: React.FC = () => {
   const [walletForm, setWalletForm] = useState({ wallet: '' });
   const [promoterForm, setPromoterForm] = useState({ promoterAddress: '' });
   const [promoCodeStatusForm, setPromoCodeStatusForm] = useState({ promoterAddress: '', isActive: true });
+  const [userPurchaseForm, setUserPurchaseForm] = useState({ userAddress: '', roundId: '' });
+  const [justRegisteredAddress, setJustRegisteredAddress] = useState<string | null>(null);
   
   // Get contract address for current chain
   const presaleAddress = getContractAddress(chainId, 'HMESH_PRESALE');
@@ -240,6 +389,114 @@ const AdminPanel: React.FC = () => {
     abi: HMESHPresaleABI,
     functionName: 'totalRounds',
   });
+
+  // Fetch stats (including promo code) for a newly registered promoter
+  const { data: justRegisteredStats, refetch: refetchJustRegisteredStats, isLoading: isLoadingJustRegisteredStats } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getPromoterStats',
+    args: [justRegisteredAddress as `0x${string}`],
+    query: {
+      enabled: !!presaleAddress && !!justRegisteredAddress && presaleAddress !== '0x0000000000000000000000000000000000000000',
+    },
+  });
+
+  // Read a user's round purchase details
+  const { data: userPurchaseData, isLoading: isLoadingUserPurchase, refetch: refetchUserPurchase } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getUserRoundPurchase',
+    args: [userPurchaseForm.userAddress as `0x${string}`, userPurchaseForm.roundId ? parseInt(userPurchaseForm.roundId) : 0],
+    query: {
+      enabled: false,
+    },
+  });
+  const userPurchaseJson = userPurchaseData ? JSON.stringify(userPurchaseData as any, null, 2) : null;
+
+  // Get all promoters
+  const { data: promoters, isLoading: isLoadingPromoters, refetch: refetchPromoters } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getPromoters',
+    query: {
+      enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000',
+    },
+  });
+
+  // Get promoter followers for selected promoter
+  const { data: followersData, isLoading: isLoadingFollowers } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getPromoterFollowers',
+    args: [selectedPromoter as `0x${string}`],
+    query: {
+      enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000' && !!selectedPromoter,
+    },
+  });
+
+  // Get promoter stats for selected promoter
+  const { data: statsData, isLoading: isLoadingStats } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getPromoterStats',
+    args: [selectedPromoter as `0x${string}`],
+    query: {
+      enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000' && !!selectedPromoter,
+    },
+  });
+
+  // Get promoter potential rewards for selected promoter
+  const { data: potentialRewardsData, isLoading: isLoadingPotentialRewards } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getPromoterPotentialRewards',
+    args: [selectedPromoter as `0x${string}`],
+    query: {
+      enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000' && !!selectedPromoter,
+    },
+  });
+
+  // Get promoter total potential rewards for selected promoter
+  const { data: totalPotentialRewardsData, isLoading: isLoadingTotalPotentialRewards } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getPromoterTotalPotentialRewards',
+    args: [selectedPromoter as `0x${string}`],
+    query: {
+      enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000' && !!selectedPromoter,
+    },
+  });
+
+  // Get user promo code for selected promoter
+  const { data: userPromoCodeData, isLoading: isLoadingUserPromoCode } = useReadContract({
+    address: presaleAddress as `0x${string}`,
+    abi: HMESHPresaleABI,
+    functionName: 'getUserPromoCode',
+    args: [selectedPromoter as `0x${string}`],
+    query: {
+      enabled: !!presaleAddress && presaleAddress !== '0x0000000000000000000000000000000000000000' && !!selectedPromoter,
+    },
+  });
+
+  // Update promoter data when selection changes
+  useEffect(() => {
+    if (followersData) {
+      setPromoterFollowers(Array.isArray(followersData) ? followersData : []);
+    }
+  }, [followersData]);
+
+  useEffect(() => {
+    if (statsData) {
+      setPromoterStats(statsData);
+    }
+  }, [statsData]);
+
+  // Filter promoters based on search
+  const filteredPromoters = promoters && Array.isArray(promoters) 
+    ? promoters.filter((promoter: string) => 
+        promoter.toLowerCase().includes(promoterSearch.toLowerCase())
+      )
+    : [];
   
   // Contract writes
   const { writeContract: pauseContract, isPending: pauseLoading } = useWriteContract();
@@ -549,6 +806,11 @@ const AdminPanel: React.FC = () => {
       args: [promoterForm.promoterAddress as `0x${string}`],
     });
     setStatus({ type: 'info', message: 'Registering promoter...' });
+    setJustRegisteredAddress(promoterForm.promoterAddress as string);
+    // Attempt a refresh shortly after to pick up the new promo code
+    setTimeout(() => {
+      refetchJustRegisteredStats();
+    }, 2000);
   };
 
   const handleSetPromoCodeStatus = () => {
@@ -569,6 +831,35 @@ const AdminPanel: React.FC = () => {
       args: [promoCodeStatusForm.promoterAddress as `0x${string}`, promoCodeStatusForm.isActive],
     });
     setStatus({ type: 'info', message: 'Updating promo code status...' });
+  };
+
+  const handleFetchUserPurchase = async () => {
+    if (!presaleAddress || presaleAddress === '0x0000000000000000000000000000000000000000') {
+      setStatus({ type: 'error', message: 'Contract address not configured for this network' });
+      return;
+    }
+    if (!userPurchaseForm.userAddress || !userPurchaseForm.roundId) {
+      setStatus({ type: 'error', message: 'Enter user address and round ID' });
+      return;
+    }
+    setStatus({ type: 'info', message: 'Fetching user purchase...' });
+    try {
+      await refetchUserPurchase();
+      setStatus({ type: 'success', message: 'Fetched user purchase' });
+    } catch (err) {
+      setStatus({ type: 'error', message: 'Failed to fetch user purchase' });
+    }
+  };
+  
+  // Handler for viewing promoter details
+  const handleViewPromoter = (promoterAddress: string) => {
+    setSelectedPromoter(promoterAddress);
+  };
+
+  // Handler for refreshing promoter data
+  const handleRefreshPromoters = () => {
+    refetchPromoters();
+    setStatus({ type: 'info', message: 'Refreshing promoter data...' });
   };
   
   return (
@@ -598,7 +889,11 @@ const AdminPanel: React.FC = () => {
         </Tab>
         <Tab $active={activeTab === 'users'} onClick={() => setActiveTab('users')}>
           <Users size={18} style={{ marginRight: '8px' }} />
-          Users & Promoters
+          Investor management
+        </Tab>
+        <Tab $active={activeTab === 'promoters'} onClick={() => setActiveTab('promoters')}>
+          <Star size={18} style={{ marginRight: '8px' }} />
+          Promoter Management
         </Tab>
         <Tab $active={activeTab === 'settings'} onClick={() => setActiveTab('settings')}>
           <Settings size={18} style={{ marginRight: '8px' }} />
@@ -941,14 +1236,58 @@ const AdminPanel: React.FC = () => {
           <AdminCard>
             <h3>
               <Users size={20} />
-              User Management
+              User Overview
             </h3>
             <p>View and manage user data</p>
             <Button variant="primary">
               View Users
             </Button>
           </AdminCard>
-          
+
+          <AdminCard>
+            <h3>
+              <Users size={20} />
+              User Management
+            </h3>
+            <p>View a user's round purchase details</p>
+            <FormGroup>
+              <label>User Address</label>
+              <input 
+                type="text" 
+                placeholder="0x..."
+                value={userPurchaseForm.userAddress}
+                onChange={(e) => setUserPurchaseForm(prev => ({ ...prev, userAddress: e.target.value }))}
+              />
+            </FormGroup>
+            <FormGroup>
+              <label>Round ID</label>
+              <input 
+                type="number" 
+                placeholder="1"
+                value={userPurchaseForm.roundId}
+                onChange={(e) => setUserPurchaseForm(prev => ({ ...prev, roundId: e.target.value }))}
+              />
+            </FormGroup>
+            <Button 
+              variant="primary"
+              onClick={handleFetchUserPurchase}
+              disabled={isLoadingUserPurchase}
+            >
+              {isLoadingUserPurchase ? 'Fetching...' : 'View Purchase'}
+            </Button>
+            {userPurchaseJson ? (
+              <div style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '8px' }}>
+                <div style={{ color: '#fff', fontWeight: 600, marginBottom: '0.5rem' }}>Result</div>
+                <pre style={{ whiteSpace: 'pre-wrap', color: '#fff', margin: 0 }}>{userPurchaseJson}</pre>
+              </div>
+            ) : null}
+          </AdminCard>
+        </AdminGrid>
+      </TabContent>
+      
+      {/* Promoters Tab */}
+      <TabContent hidden={activeTab !== 'promoters'}>
+        <AdminGrid>
           <AdminCard>
             <h3>
               <UserCheck size={20} />
@@ -971,6 +1310,23 @@ const AdminPanel: React.FC = () => {
             >
               {registerPromoterLoading ? 'Registering...' : 'Register Promoter'}
             </Button>
+            {justRegisteredAddress && (
+              <div style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.05)', padding: '0.75rem', borderRadius: '8px' }}>
+                <div style={{ color: '#fff', fontWeight: 600, marginBottom: '0.25rem' }}>Promo Code</div>
+                <div style={{ color: '#ffc107' }}>
+                  {isLoadingJustRegisteredStats ? 'Fetching promo code...' : (justRegisteredStats ? String((justRegisteredStats as any)._promoCode ?? '') : 'No promo code yet')}
+                </div>
+                <div>
+                  <Button 
+                    variant="primary" 
+                    onClick={() => refetchJustRegisteredStats()} 
+                    style={{ width: 'auto', marginTop: '0.5rem', padding: '0.4rem 0.75rem' }}
+                  >
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+            )}
           </AdminCard>
 
           <AdminCard>
@@ -1006,7 +1362,239 @@ const AdminPanel: React.FC = () => {
               {setPromoCodeStatusLoading ? 'Updating...' : 'Update Status'}
             </Button>
           </AdminCard>
+
+          <AdminCard>
+            <h3>
+              <Star size={20} />
+              Promoter Overview
+            </h3>
+            <p>Total promoters: {promoters && Array.isArray(promoters) ? promoters.length : 0}</p>
+            <Button variant="primary" onClick={handleRefreshPromoters}>
+              <RefreshCw size={16} style={{ marginRight: '8px' }} />
+              Refresh Data
+            </Button>
+          </AdminCard>
+          
+          <AdminCard>
+            <h3>
+              <TrendingUp size={20} />
+              Total Referrals
+            </h3>
+            <p>Combined referral count across all promoters</p>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#51cf66', textAlign: 'center', margin: '1rem 0' }}>
+              {promoters && Array.isArray(promoters) ? 
+                promoters.reduce((total, promoter) => {
+                  // This would need to be calculated from individual promoter stats
+                  // For now, showing placeholder
+                  return total + 0;
+                }, 0) : 0
+              }
+            </div>
+          </AdminCard>
+          
+          <AdminCard>
+            <h3>
+              <DollarSign size={20} />
+              Total Rewards
+            </h3>
+            <p>Combined potential rewards for all promoters</p>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#51cf66', textAlign: 'center', margin: '1rem 0' }}>
+              {promoters && Array.isArray(promoters) ? 
+                promoters.reduce((total, promoter) => {
+                  // This would need to be calculated from individual promoter stats
+                  // For now, showing placeholder
+                  return total + 0;
+                }, 0) : 0
+              } HMESH
+            </div>
+          </AdminCard>
         </AdminGrid>
+
+        {/* Promoter Search */}
+        <div style={{ marginBottom: '2rem' }}>
+          <SearchInput
+            type="text"
+            placeholder="Search promoters by address..."
+            value={promoterSearch}
+            onChange={(e) => setPromoterSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Promoters List */}
+        {isLoadingPromoters ? (
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '2rem', 
+            color: 'rgba(255, 255, 255, 0.8)',
+            fontSize: '1.1rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem'
+          }}>
+            <Loader2 size={20} className="animate-spin" />
+            Loading promoters...
+          </div>
+        ) : filteredPromoters.length > 0 ? (
+          <div style={{ display: 'grid', gap: '1.5rem' }}>
+            {filteredPromoters.map((promoter: string, index: number) => (
+              <PromoterCard key={index}>
+                <div className="promoter-header">
+                  <div className="promoter-address">
+                    {promoter.slice(0, 6)}...{promoter.slice(-4)}
+                  </div>
+                  <div className="promoter-status active">
+                    Active
+                  </div>
+                </div>
+                
+                <div className="promoter-stats">
+                  <div className="stat-item">
+                    <div className="stat-value">#{index + 1}</div>
+                    <div className="stat-label">Rank</div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-value">
+                      {promoter === selectedPromoter ? (
+                        isLoadingFollowers ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          promoterFollowers.length
+                        )
+                      ) : (
+                        <Eye 
+                          size={16} 
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => handleViewPromoter(promoter)}
+                        />
+                      )}
+                    </div>
+                    <div className="stat-label">Followers</div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-value">
+                      {promoter === selectedPromoter ? (
+                        isLoadingStats ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          promoterStats ? Number(promoterStats.totalReferrals || 0) : 0
+                        )
+                      ) : (
+                        <TrendingUp 
+                          size={16} 
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => handleViewPromoter(promoter)}
+                        />
+                      )}
+                    </div>
+                    <div className="stat-label">Referrals</div>
+                  </div>
+                </div>
+
+                {/* Show detailed stats when promoter is selected */}
+                {promoter === selectedPromoter && (
+                  <>
+                                         {promoterStats && (
+                       <div style={{ 
+                         marginTop: '1rem', 
+                         padding: '1rem', 
+                         background: 'rgba(255, 255, 255, 0.05)', 
+                         borderRadius: '8px',
+                         fontSize: '0.85rem'
+                       }}>
+                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                           <div>
+                             <strong style={{ color: '#fff' }}>Total Referrals:</strong> {Number(promoterStats.totalReferrals || 0)}
+                           </div>
+                           <div>
+                             <strong style={{ color: '#fff' }}>Followers Count:</strong> {promoterFollowers.length}
+                           </div>
+                           <div>
+                             <strong style={{ color: '#fff' }}>Potential Rewards:</strong> {Number(promoterStats.potentialRewards || 0) / 1e18} HMESH
+                           </div>
+                           <div>
+                             <strong style={{ color: '#fff' }}>Total Potential Rewards:</strong> {Number(totalPotentialRewardsData || 0) / 1e18} HMESH
+                           </div>
+                         </div>
+                       </div>
+                     )}
+
+                     {/* Promo Code Information */}
+                     {Boolean(userPromoCodeData) && (
+                       <div style={{ 
+                         marginTop: '1rem', 
+                         padding: '1rem', 
+                         background: 'rgba(255, 193, 7, 0.1)', 
+                         borderRadius: '8px',
+                         fontSize: '0.85rem',
+                         border: '1px solid rgba(255, 193, 7, 0.3)'
+                       }}>
+                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                           <div>
+                             <strong style={{ color: '#ffc107' }}>Promo Code:</strong> {`${userPromoCodeData ?? ''}`}
+                           </div>
+                           <div>
+                             <strong style={{ color: '#ffc107' }}>Status:</strong> 
+                             <span style={{ 
+                               color: '#51cf66', 
+                               marginLeft: '0.5rem',
+                               padding: '0.25rem 0.5rem',
+                               background: 'rgba(81, 207, 102, 0.2)',
+                               borderRadius: '4px',
+                               fontSize: '0.8rem'
+                             }}>
+                               Active
+                             </span>
+                           </div>
+                         </div>
+                       </div>
+                     )}
+
+                    {/* Followers List */}
+                    {promoterFollowers.length > 0 && (
+                      <div className="promoter-followers">
+                        <div className="followers-header">
+                          <h4>Followers ({promoterFollowers.length})</h4>
+                        </div>
+                        <div className="followers-list">
+                          {promoterFollowers.map((follower: any, followerIndex: number) => (
+                            <div key={followerIndex} className="follower-item">
+                              <div className="follower-address">
+                                {follower.user ? `${follower.user.slice(0, 6)}...${follower.user.slice(-4)}` : 'Unknown'}
+                              </div>
+                              <div className="follower-amount">
+                                {follower.amount ? `${(Number(follower.amount) / 1e18).toFixed(2)} HMESH` : 'N/A'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+                  <Button 
+                    variant="primary" 
+                    onClick={() => handleViewPromoter(promoter)}
+                    style={{ width: 'auto', padding: '0.5rem 1rem' }}
+                  >
+                    {promoter === selectedPromoter ? 'Hide Details' : 'View Details'}
+                  </Button>
+                </div>
+              </PromoterCard>
+            ))}
+          </div>
+        ) : (
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '2rem', 
+            color: 'rgba(255, 255, 255, 0.7)',
+            fontSize: '1.1rem'
+          }}>
+            {promoterSearch ? 'No promoters found matching your search.' : 'No promoters registered yet.'}
+          </div>
+        )}
       </TabContent>
       
       {/* Settings Tab */}
